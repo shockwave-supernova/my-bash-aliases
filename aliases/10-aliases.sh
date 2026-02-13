@@ -101,30 +101,26 @@ alias reboot='sudo reboot'
 
 # =============================================================================
 # --- SYSTEM REPORT ---
-# Paranoid system health report
 # Shows disk usage, memory & swap, load average, failed systemd units,
-# top memory consumers, last logged-in users, and external IPs.
-# Color-coded: red = problems/alerts, green = normal, yellow = headings.
+# Lightweight system health overview for modern Linux systems.
+# Designed for NetworkManager-based setups (Fedora, etc.).
 # =============================================================================
-sysrep() {
-    local RED='\033[0;31m'
-    local GREEN='\033[0;32m'
-    local YELLOW='\033[1;33m'
-    local NC='\033[0m'
 
-    # --- Check required commands ---
-    for cmd in curl bc df free nproc systemctl ps last; do
-        command -v "$cmd" >/dev/null 2>&1 || echo -e "${RED}Warning: $cmd not found. Some info may be missing.${NC}"
-    done
+sysrep() {
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    NC='\033[0m'
 
     # --- Header ---
     echo -e "${YELLOW}=== SYSTEM ANALYSIS: $(hostname) ===${NC}"
     echo "Time: $(date)"
     echo "---------------------------------------------------"
 
-    # --- [1] Disk Usage ---
-    local root_usage=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+    # --- Disk usage (root filesystem) ---
+    root_usage=$(df --output=pcent / | tail -1 | tr -dc '0-9')
     [[ ! "$root_usage" =~ ^[0-9]+$ ]] && root_usage=0
+
     echo -n "Root Usage: "
     if [ "$root_usage" -gt 90 ]; then
         echo -e "${RED}${root_usage}% (CRITICAL)${NC}"
@@ -132,58 +128,66 @@ sysrep() {
         echo -e "${GREEN}${root_usage}%${NC}"
     fi
 
-    # --- [2] Memory Usage ---
+    # --- Memory ---
     echo -e "\nMemory (RAM):"
     free -h | awk '/^Mem:/ {printf "Used: %s / Total: %s\n", $3, $2}'
+
     echo "Swap:"
     free -h | awk '/^Swap:/ {printf "Used: %s / Total: %s\n", $3, $2}'
 
-    # --- [3] Load Average ---
+    # --- Load average vs CPU cores ---
     echo -e "\nLoad Average:"
-    local load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/^[[:space:]]*//')
-    local cores=$(nproc)
-    local load1min=$(echo "$load" | cut -d, -f1 | tr -d ' ')
-    local load1min_int=${load1min%.*}
+    load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/^[[:space:]]*//')
+    cores=$(nproc)
+    load1min=$(echo "$load" | cut -d, -f1 | tr -d ' ')
+    load1min_int=${load1min%.*}
+
     if (( load1min_int > cores )); then
         echo -e "${RED}$load${NC}"
     else
         echo -e "${GREEN}$load${NC}"
     fi
 
-    # --- [4] Failed systemd Units ---
+    # --- Failed systemd units ---
     echo -e "\n${YELLOW}Failed Units:${NC}"
-    local failed=$(systemctl list-units --state=failed --no-legend)
+    failed=$(systemctl list-units --state=failed --no-legend)
+
     if [ -z "$failed" ]; then
         echo "None"
     else
         echo -e "${RED}$failed${NC}"
     fi
 
-    # --- [5] Top Memory Consumers ---
+    # --- Top memory consumers ---
     echo -e "\n${YELLOW}Top Memory Consumers:${NC}"
-    ps aux --sort=-%mem | head -n 6 | awk '{printf "%-8s %-10s %-6s %s\n", $1, $2, $4 "%", $11}'
+    ps aux --sort=-%mem | head -n 6 \
+        | awk '{printf "%-8s %-10s %-6s %s\n", $1, $2, $4 "%", $11}'
 
-    # --- [6] Last Logged-in Users ---
+    # --- Last logged-in users ---
     echo -e "\n${YELLOW}Last Logged-in Users:${NC}"
     last -n 5 | awk '{print $1, $3, $4, $5, $6, $7}'
 
-    # --- [7] External IPs ---
+    # --- Network (local addresses only) ---
     echo -e "\n${YELLOW}Network Status:${NC}"
-    local ip4=$(curl -4fsS --connect-timeout 2 ifconfig.me 2>/dev/null || echo "")
-    local ip6=$(curl -6fsS --connect-timeout 2 ifconfig.me 2>/dev/null || echo "")
+
+    ip4=$(ip -4 -o addr show scope global 2>/dev/null \
+          | awk '{print $4}' | cut -d/ -f1)
+    ip6=$(ip -6 -o addr show scope global 2>/dev/null \
+          | awk '{print $4}' | cut -d/ -f1)
+
     [ -z "$ip4" ] && ip4="Not detected"
     [ -z "$ip6" ] && ip6="Not detected"
+
     echo -e "IPv4: ${GREEN}$ip4${NC}"
     echo -e "IPv6: ${GREEN}$ip6${NC}"
 
     # --- Footer ---
-    echo -e "---------------------------------------------------"
+    echo "---------------------------------------------------"
     echo -e "${YELLOW}End of report.${NC}"
 }
 
-
 # ------------------------------------------------------------------------------
-#   НАВИГАЦИЯ
+#   NAVIGATION
 # ------------------------------------------------------------------------------
 
 # Quick navigation one level up
